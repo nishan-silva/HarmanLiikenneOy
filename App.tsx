@@ -1,4 +1,3 @@
-#nishan
 import React from 'react';
 import { SafeAreaView, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -7,7 +6,7 @@ const App = () => {
   return (
     <SafeAreaView style={styles.container}>
       <WebView
-        source={{ uri: 'https://harmanliikenne.fi/seinajoen-paikallisliikenne/talviaikataulut/' }} // Replace with your desired URL
+        source={{ uri: 'https://harmanliikenne.fi/seinajoen-paikallisliikenne/talviaikataulut/' }}
       />
     </SafeAreaView>
   );

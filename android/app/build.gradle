@@ -1,78 +1,89 @@
 apply plugin: "com.android.application"
 apply plugin: "com.facebook.react"
 
-// ---- CI-friendly versioning values ----
-def ciRunNumber = System.getenv("CI_BUILD_NUMBER") ?: System.getenv("GITHUB_RUN_NUMBER")
-def ciVersionName = System.getenv("CI_VERSION_NAME")
+// ---- CI inputs (optional) ----
+def ciRunNumber   = (System.getenv("CI_VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+def ciNameBase    = System.getenv("CI_VERSION_NAME_BASE") ?: "1.0"   // e.g. "1.2"
+def ciVersionName = System.getenv("CI_VERSION_NAME")                 // override full name if you pass it
 
-react {
-  // defaults are fine for RN 0.74+; keep commented settings if needed
-}
+react { /* defaults */ }
 
-// Toggle minification (Proguard/R8) for release
 def enableProguardInReleaseBuilds = false
-
-// Use JSC when Hermes disabled
 def jscFlavor = 'org.webkit:android-jsc:+'
 
 android {
   ndkVersion rootProject.ext.ndkVersion
   compileSdkVersion rootProject.ext.compileSdkVersion
-
   namespace "com.harmanliikenneoy"
 
   defaultConfig {
     applicationId "com.harmanliikenneoy"
     minSdkVersion rootProject.ext.minSdkVersion
     targetSdkVersion rootProject.ext.targetSdkVersion
+    // will be overridden per flavor below
+    versionCode 1
+    versionName "0.0.0"
+  }
 
-    // --- CI-driven versioning ---
-    versionCode (ciRunNumber != null ? ciRunNumber.toInteger() : 1)
-    versionName (ciVersionName ?: "1.0." + (ciRunNumber ?: "0"))
+  // ---- ENV FLAVORS ----
+  flavorDimensions "env"
+  productFlavors {
+    // Reserve disjoint versionCode ranges to prevent collisions:
+    // prod:    0–999,999
+    // staging: 1,000,000–1,999,999
+    // dev:     2,000,000–2,999,999
+    dev {
+      dimension "env"
+      applicationIdSuffix ".dev"
+      versionCode 2000000 + ciRunNumber
+      versionName (ciVersionName ?: "${ciNameBase}.${ciRunNumber}-dev")
+      resValue "string", "app_name", "Harman (Dev)"
+    }
+    staging {
+      dimension "env"
+      applicationIdSuffix ".stg"
+      versionCode 1000000 + ciRunNumber
+      versionName (ciVersionName ?: "${ciNameBase}.${ciRunNumber}-stg")
+      resValue "string", "app_name", "Harman (Staging)"
+    }
+    prod {
+      dimension "env"
+      // no suffix → real package name for production
+      versionCode 0 + ciRunNumber
+      versionName (ciVersionName ?: "${ciNameBase}.${ciRunNumber}")
+      resValue "string", "app_name", "Harman"
+    }
   }
 
   signingConfigs {
-    // Local debug as before
     debug {
-      storeFile file('debug.keystore')
-      storePassword 'android'
-      keyAlias 'androiddebugkey'
-      keyPassword 'android'
+      storeFile file('debug.keystore'); storePassword 'android'
+      keyAlias 'androiddebugkey'; keyPassword 'android'
     }
-
-    // Release: CI env vars or optional local keystore.properties fallback
     release {
       if (System.getenv("CI") != null) {
-        // GitHub Actions step writes keystore.jks into android/app/
         storeFile file("keystore.jks")
         storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
         keyAlias System.getenv("ANDROID_KEY_ALIAS")
         keyPassword System.getenv("ANDROID_KEY_ALIAS_PASSWORD")
       } else {
-        // Optional local signing (create android/keystore.properties)
         def propsFile = rootProject.file("keystore.properties")
         if (propsFile.exists()) {
-          def props = new Properties()
-          props.load(new FileInputStream(propsFile))
+          def props = new Properties(); props.load(new FileInputStream(propsFile))
           storeFile file(props['storeFile'])
           storePassword props['storePassword']
           keyAlias props['keyAlias']
           keyPassword props['keyPassword']
         } else {
-          // fallback to debug signing for local dev
-          storeFile file('debug.keystore')
-          storePassword 'android'
-          keyAlias 'androiddebugkey'
-          keyPassword 'android'
+          storeFile file('debug.keystore'); storePassword 'android'
+          keyAlias 'androiddebugkey'; keyPassword 'android'
         }
       }
     }
   }
 
   buildTypes {
-    debug {
-      signingConfig signingConfigs.debug
-    }
+    debug { signingConfig signingConfigs.debug }
     release {
       signingConfig signingConfigs.release
       minifyEnabled enableProguardInReleaseBuilds
@@ -82,23 +93,12 @@ android {
 }
 
 dependencies {
-  // RN core
   implementation("com.facebook.react:react-android")
-
-  // Flipper (debug only)
   debugImplementation("com.facebook.flipper:flipper:${FLIPPER_VERSION}")
-  debugImplementation("com.facebook.flipper:flipper-network-plugin:${FLIPPER_VERSION}") {
-    exclude group:'com.squareup.okhttp3', module:'okhttp'
-  }
+  debugImplementation("com.facebook.flipper:flipper-network-plugin:${FLIPPER_VERSION}") { exclude group:'com.squareup.okhttp3', module:'okhttp' }
   debugImplementation("com.facebook.flipper:flipper-fresco-plugin:${FLIPPER_VERSION}")
-
-  if (hermesEnabled.toBoolean()) {
-    implementation("com.facebook.react:hermes-android")
-  } else {
-    implementation jscFlavor
-  }
+  if (hermesEnabled.toBoolean()) implementation("com.facebook.react:hermes-android") else implementation jscFlavor
 }
 
-// Autolink RN native modules
-apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); 
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
 applyNativeModulesAppBuildGradle(project)

@@ -1,0 +1,155 @@
+name: Release to Firebase
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Which platform to build?"
+        type: choice
+        required: true
+        options:
+          - android
+          - ios
+          - both
+        default: both
+      release_notes:
+        description: "Release notes"
+        required: false
+        type: string
+      node_version:
+        description: "Node version"
+        required: false
+        type: string
+        default: "18"
+
+jobs:
+  android:
+    if: ${{ inputs.platform == 'android' || inputs.platform == 'both' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    env:
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      FIREBASE_ANDROID_APP_ID: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
+      FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
+      FIREBASE_GROUPS: ${{ secrets.FIREBASE_GROUPS }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install JS deps
+        run: |
+          cd ..
+          npm ci
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Decrypt keystore
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > keystore.jks
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+      - name: Install Ruby + bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+          working-directory: ./
+
+      - name: Bundle install
+        run: |
+          cd ..
+          bundle install --path vendor/bundle
+
+      - name: Build & upload to Firebase (Fastlane)
+        run: |
+          cd ..
+          bundle exec fastlane android firebase_release
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_ALIAS_PASSWORD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-outputs
+          path: |
+            android/app/build/outputs/**/*.aab
+            android/app/build/outputs/**/*.apk
+
+  ios:
+    if: ${{ inputs.platform == 'ios' || inputs.platform == 'both' }}
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: ios
+    env:
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      FIREBASE_IOS_APP_ID: ${{ secrets.FIREBASE_IOS_APP_ID }}
+      FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
+      FIREBASE_GROUPS: ${{ secrets.FIREBASE_GROUPS }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install JS deps & Pods
+        run: |
+          cd ..
+          npm ci
+          cd ios
+          sudo gem install cocoapods -N
+          pod install --repo-update
+
+      - name: Install Ruby + bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+          working-directory: ./
+
+      - name: Bundle install
+        run: |
+          cd ..
+          bundle install --path vendor/bundle
+
+      - name: Prepare iOS signing files
+        run: |
+          # Files are created/consumed by Fastlane in ios/
+          :
+
+      - name: Build & upload to Firebase (Fastlane)
+        run: |
+          cd ..
+          bundle exec fastlane ios firebase_release
+        env:
+          IOS_CERTS_P12_BASE64: ${{ secrets.IOS_CERTS_P12_BASE64 }}
+          IOS_CERTS_PASSWORD:   ${{ secrets.IOS_CERTS_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: ios/*.ipa

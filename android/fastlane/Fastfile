@@ -1,0 +1,20 @@
+default_platform(:android)
+
+platform :android do
+  lane :firebase_release do
+    gradle(
+      task: "bundle", # or "assemble" if you prefer APK
+      build_type: "Release"
+    )
+    firebase_app_distribution(
+      app: ENV["FIREBASE_ANDROID_APP_ID"],       # e.g. 1:1234567890:android:abcdef...
+      testers: ENV["FIREBASE_TESTERS"],          # comma emails or tester group aliases
+      release_notes: ENV["RELEASE_NOTES"] || "",
+      groups: ENV["FIREBASE_GROUPS"],            # optional
+      firebase_cli_token: ENV["FIREBASE_TOKEN"],
+      android_artifact_type: "AAB",
+      apk_path: Dir["app/build/outputs/apk/release/*.apk"].last, # fallback if you switched to APK
+      aab_path: Dir["app/build/outputs/bundle/release/*.aab"].last
+    )
+  end
+end

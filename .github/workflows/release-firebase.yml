@@ -22,6 +22,15 @@ on:
         type: string
         default: "18"
 
+      bump:                        # <— new
+        description: "Version bump type (skip to keep current)"
+        type: choice
+        options: [skip, patch, minor, major]
+        default: skip
+
+permissions:
+  contents: write
+
 jobs:
   android:
     if: ${{ inputs.platform == 'android' || inputs.platform == 'both' }}
@@ -38,22 +47,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Detect environment from branch
-        run: |
-          BRANCH="${GITHUB_REF_NAME}"
-          echo "Branch: $BRANCH"
-          if [ "$BRANCH" = "master" ] || [ "$BRANCH" = "main" ]; then
-            echo "FLAVOR=prod" >> $GITHUB_ENV
-            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_PROD }}" >> $GITHUB_ENV
-          elif [ "$BRANCH" = "staging" ]; then
-            echo "FLAVOR=staging" >> $GITHUB_ENV
-            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_STG }}" >> $GITHUB_ENV
-          else
-            echo "FLAVOR=dev" >> $GITHUB_ENV
-            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_DEV }}" >> $GITHUB_ENV
-          fi
-          echo "Flavor=$FLAVOR, FirebaseApp=$FIREBASE_APP_ID"
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -64,13 +57,66 @@ jobs:
           cd ..
           npm ci
 
+      - name: Detect environment from branch
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          if [ "$BRANCH" = "master" ] || [ "$BRANCH" = "main" ]; then
+            echo "FLAVOR=prod" >> $GITHUB_ENV
+            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_PROD }}" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "staging" ]; then
+            echo "FLAVOR=staging" >> $GITHUB_ENV
+            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_STG }}" >> $GITHUB_ENV
+          else
+            echo "FLAVOR=dev" >> $GITHUB_ENV
+            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_DEV }}" >> $GITHUB_ENV
+          fi
+          echo "Env flavor: $FLAVOR"
+          echo "Firebase App ID: $FIREBASE_APP_ID"
+
+
+      - name: (Optional) Bump version in version.properties
+        if: ${{ inputs.bump != 'skip' }}
+        run: |
+          chmod +x gradlew
+          case "${FLAVOR}:${{ inputs.bump }}" in
+            prod:patch)    ./gradlew bumpPatchProd ;;
+            prod:minor)    ./gradlew bumpMinorProd ;;
+            prod:major)    ./gradlew bumpMajorProd ;;
+            staging:patch) ./gradlew bumpPatchStg  ;;
+            staging:minor) ./gradlew bumpMinorStg  ;;
+            staging:major) ./gradlew bumpMajorStg  ;;
+            dev:patch)     ./gradlew bumpPatchDev  ;;
+            dev:minor)     ./gradlew bumpMinorDev  ;;
+            dev:major)     ./gradlew bumpMajorDev  ;;
+          esac
+
+      - name: Commit version bump
+        if: ${{ inputs.bump != 'skip' }}
+        working-directory: ${{ github.workspace }}   # repo root
+        run: |
+          FILE="android/version.properties"
+          if [ ! -f "$FILE" ]; then
+            echo "version file not found at $FILE"
+            exit 1
+          fi
+
+          if git diff --quiet -- "$FILE"; then
+            echo "No version change detected."
+          else
+            git config user.name  "ci-bot"
+            git config user.email "ci-bot@users.noreply.github.com"
+            git add "$FILE"
+            git commit -m "chore(version): bump ${FLAVOR} ${{ inputs.bump }}"
+            git push
+          fi
+
       - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Make gradlew executable
+      - name: Make gradle executable
         run: chmod +x gradlew
 
       - name: Decrypt keystore (if provided)

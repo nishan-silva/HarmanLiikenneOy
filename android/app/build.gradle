@@ -1,10 +1,24 @@
 apply plugin: "com.android.application"
 apply plugin: "com.facebook.react"
 
-// ---- CI inputs (optional) ----
-def ciRunNumber   = (System.getenv("CI_VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
-def ciNameBase    = System.getenv("CI_VERSION_NAME_BASE") ?: "1.0"   // e.g. "1.2"
-def ciVersionName = System.getenv("CI_VERSION_NAME")                 // override full name if you pass it
+def ciRunNumber = (System.getenv("CI_VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+
+// ---- read per-environment version bases ----
+def versionProps = new Properties()
+def versionFile = rootProject.file("version.properties")
+if (versionFile.exists()) {
+  versionProps.load(new FileInputStream(versionFile))
+}
+
+def baseProd = System.getenv("CI_VERSION_NAME_BASE_PROD") ?: versionProps.getProperty("VERSION_NAME_BASE_PROD", "1.0.0")
+def baseStg  = System.getenv("CI_VERSION_NAME_BASE_STG")  ?: versionProps.getProperty("VERSION_NAME_BASE_STG",  "1.0.0")
+def baseDev  = System.getenv("CI_VERSION_NAME_BASE_DEV")  ?: versionProps.getProperty("VERSION_NAME_BASE_DEV",  "1.0.0")
+
+// optional “full override” per-env if you ever need it
+def nameProdOverride = System.getenv("CI_VERSION_NAME_PROD")
+def nameStgOverride  = System.getenv("CI_VERSION_NAME_STG")
+def nameDevOverride  = System.getenv("CI_VERSION_NAME_DEV")
+
 
 react { /* defaults */ }
 
@@ -26,31 +40,36 @@ android {
   }
 
   // ---- ENV FLAVORS ----
-  flavorDimensions "env"
-  productFlavors {
-    // Reserve disjoint versionCode ranges to prevent collisions:
-    // prod:    0–999,999
-    // staging: 1,000,000–1,999,999
-    // dev:     2,000,000–2,999,999
-    dev {
-      dimension "env"
-      applicationIdSuffix ".dev"
-      versionCode 2000000 + ciRunNumber
-      versionName (ciVersionName ?: "${ciNameBase}.${ciRunNumber}-dev")
-    }
-    staging {
-      dimension "env"
-      applicationIdSuffix ".stg"
-      versionCode 1000000 + ciRunNumber
-      versionName (ciVersionName ?: "${ciNameBase}.${ciRunNumber}-stg")
-    }
-    prod {
-      dimension "env"
-      // no suffix → real package name for production
-      versionCode 0 + ciRunNumber
-      versionName (ciVersionName ?: "${ciNameBase}.${ciRunNumber}")
-    }
+flavorDimensions "env"
+productFlavors {
+  // dev: 2,000,000–2,999,999
+  dev {
+    dimension "env"
+    applicationIdSuffix ".dev"
+    versionCode 2000000 + ciRunNumber
+    // Industry standard: 1.0.2-dev.<build>
+    versionName (nameDevOverride ?: "${baseDev}-dev.${ciRunNumber}")
   }
+
+  // staging: 1,000,000–1,999,999
+  staging {
+    dimension "env"
+    applicationIdSuffix ".stg"
+    versionCode 1000000 + ciRunNumber
+    // Industry standard: 1.0.2-stg.<build>
+    versionName (nameStgOverride ?: "${baseStg}-stg.${ciRunNumber}")
+  }
+
+  // prod: 0–999,999
+  prod {
+    dimension "env"
+    // store-ready, no suffix
+    versionCode ciRunNumber
+    // Industry standard: 1.0.2
+    versionName (nameProdOverride ?: baseProd)
+  }
+}
+
 
   signingConfigs {
     debug {
@@ -99,3 +118,57 @@ dependencies {
 
 apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
 applyNativeModulesAppBuildGradle(project)
+
+// --- Version bump tasks below ---
+
+def vfile = rootProject.file("version.properties")
+
+def bump = { String key, String type ->
+  def props = new Properties()
+  if (vfile.exists()) {
+    new FileInputStream(vfile).withCloseable { fis ->
+      props.load(fis)
+    }
+  }
+
+  // Always coerce to plain String
+  String curStr = (props.getProperty(key) ?: "1.0.0") as String
+
+  // Parse MAJOR.MINOR.PATCH safely
+  String[] parts = curStr.split("\\.")
+  int major = (parts.length > 0 ? parts[0] : "0") as int
+  int minor = (parts.length > 1 ? parts[1] : "0") as int
+  int patch = (parts.length > 2 ? parts[2] : "0") as int
+
+  switch (type) {
+    case "major": major += 1; minor = 0; patch = 0; break
+    case "minor": minor += 1; patch = 0; break
+    case "patch": patch += 1; break
+    default:
+      throw new GradleException("Unknown bump type: ${type}")
+  }
+
+  String newVer = "${major}.${minor}.${patch}"
+
+  // Set back as a plain String
+  props.setProperty(key, newVer)
+
+  new FileOutputStream(vfile).withCloseable { fos ->
+    props.store(fos, null)
+  }
+
+  println "🔼 ${key} → ${newVer}"
+}
+
+
+tasks.register("bumpPatchProd") { doLast { bump("VERSION_NAME_BASE_PROD","patch") } }
+tasks.register("bumpMinorProd") { doLast { bump("VERSION_NAME_BASE_PROD","minor") } }
+tasks.register("bumpMajorProd") { doLast { bump("VERSION_NAME_BASE_PROD","major") } }
+
+tasks.register("bumpPatchStg")  { doLast { bump("VERSION_NAME_BASE_STG", "patch") } }
+tasks.register("bumpMinorStg")  { doLast { bump("VERSION_NAME_BASE_STG", "minor") } }
+tasks.register("bumpMajorStg")  { doLast { bump("VERSION_NAME_BASE_STG", "major") } }
+
+tasks.register("bumpPatchDev")  { doLast { bump("VERSION_NAME_BASE_DEV", "patch") } }
+tasks.register("bumpMinorDev")  { doLast { bump("VERSION_NAME_BASE_DEV", "minor") } }
+tasks.register("bumpMajorDev")  { doLast { bump("VERSION_NAME_BASE_DEV", "major") } }

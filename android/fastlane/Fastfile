@@ -2,24 +2,35 @@ default_platform(:android)
 
 platform :android do
   lane :firebase_release do
-    gradle(
-      task: "assemble",
-      build_type: "Release",
-      print_command: true
-    )
+    # dev / staging / prod (set in workflow env)
+    flavor = (ENV["FLAVOR"] || "dev").downcase
+    gradle_task = "assemble#{flavor.capitalize}Release"
 
-    # Prefer the path set by the gradle action, then fall back to a glob
+    # Build the flavor-specific Release APK
+    sh("./gradlew #{gradle_task}")
+
+    # Prefer Gradle-provided output var, then flavor path, then fallback
     apk = Actions.lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH]
     apk ||= ENV["GRADLE_APK_OUTPUT_PATH"]
+    apk ||= Dir["app/build/outputs/apk/#{flavor}/release/*.apk"].max_by { |f| File.mtime(f) }
     apk ||= Dir["app/build/outputs/apk/release/*.apk"].max_by { |f| File.mtime(f) }
-
     UI.user_error!("No APK artifact found") unless apk && File.exist?(apk)
 
+    # Log for debugging
+    sh("ls -la app/build/outputs/apk/#{flavor}/release || true")
     sh("ls -la app/build/outputs/apk/release || true")
     UI.message("Using APK: #{apk}")
 
+    # Pick Firebase App ID per flavor (with sensible fallbacks)
+    app_id =
+      case flavor
+      when "prod"    then ENV["FIREBASE_ANDROID_APP_ID_PROD"] || ENV["FIREBASE_ANDROID_APP_ID"]
+      when "staging" then ENV["FIREBASE_ANDROID_APP_ID_STG"]  || ENV["FIREBASE_ANDROID_APP_ID"]
+      else                 ENV["FIREBASE_ANDROID_APP_ID_DEV"]  || ENV["FIREBASE_ANDROID_APP_ID"]
+      end
+
     firebase_app_distribution(
-      app: ENV["FIREBASE_ANDROID_APP_ID"],
+      app: app_id,
       testers: ENV["FIREBASE_TESTERS"],
       groups: ENV["FIREBASE_GROUPS"],
       release_notes: (ENV["RELEASE_NOTES"] || ""),

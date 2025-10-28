@@ -31,13 +31,28 @@ jobs:
         working-directory: android
     env:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-      FIREBASE_ANDROID_APP_ID: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
       FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
       FIREBASE_GROUPS: ${{ secrets.FIREBASE_GROUPS }}
       RELEASE_NOTES: ${{ inputs.release_notes }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Detect environment from branch
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          echo "Branch: $BRANCH"
+          if [ "$BRANCH" = "master" ] || [ "$BRANCH" = "main" ]; then
+            echo "FLAVOR=prod" >> $GITHUB_ENV
+            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_PROD }}" >> $GITHUB_ENV
+          elif [ "$BRANCH" = "staging" ]; then
+            echo "FLAVOR=staging" >> $GITHUB_ENV
+            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_STG }}" >> $GITHUB_ENV
+          else
+            echo "FLAVOR=dev" >> $GITHUB_ENV
+            echo "FIREBASE_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID_DEV }}" >> $GITHUB_ENV
+          fi
+          echo "Flavor=$FLAVOR, FirebaseApp=$FIREBASE_APP_ID"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -63,7 +78,6 @@ jobs:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-           # write into the app module because build.gradle reads app/keystore.jks
             echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/keystore.jks
             echo "Keystore decoded to app/keystore.jks"
           else
@@ -75,7 +89,6 @@ jobs:
         with:
           ruby-version: "3.2"
           bundler-cache: true
-          working-directory: ./
 
       - name: Bundle install
         run: |
@@ -86,6 +99,8 @@ jobs:
         run: |
           bundle exec fastlane android firebase_release
         env:
+          FLAVOR: ${{ env.FLAVOR }}                    # dev / staging / prod
+          FIREBASE_ANDROID_APP_ID: ${{ env.FIREBASE_APP_ID }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_ALIAS_PASSWORD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}

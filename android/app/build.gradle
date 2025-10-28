@@ -123,20 +123,43 @@ applyNativeModulesAppBuildGradle(project)
 
 def vfile = rootProject.file("version.properties")
 
-def bump = { key, type ->
+def bump = { String key, String type ->
   def props = new Properties()
-  if (vfile.exists()) props.load(new FileInputStream(vfile))
-  def cur = (props[key] ?: "1.0.0").tokenize('.').collect { it as int }
-  switch (type) {
-    case "major": cur[0] += 1; cur[1] = 0; cur[2] = 0; break
-    case "minor": cur[1] += 1; cur[2] = 0; break
-    case "patch": cur[2] += 1; break
+  if (vfile.exists()) {
+    new FileInputStream(vfile).withCloseable { fis ->
+      props.load(fis)
+    }
   }
-  def newVer = "${cur[0]}.${cur[1]}.${cur[2]}"
-  props[key] = newVer
-  props.store(new FileOutputStream(vfile), null)
+
+  // Always coerce to plain String
+  String curStr = (props.getProperty(key) ?: "1.0.0") as String
+
+  // Parse MAJOR.MINOR.PATCH safely
+  String[] parts = curStr.split("\\.")
+  int major = (parts.length > 0 ? parts[0] : "0") as int
+  int minor = (parts.length > 1 ? parts[1] : "0") as int
+  int patch = (parts.length > 2 ? parts[2] : "0") as int
+
+  switch (type) {
+    case "major": major += 1; minor = 0; patch = 0; break
+    case "minor": minor += 1; patch = 0; break
+    case "patch": patch += 1; break
+    default:
+      throw new GradleException("Unknown bump type: ${type}")
+  }
+
+  String newVer = "${major}.${minor}.${patch}"
+
+  // Set back as a plain String
+  props.setProperty(key, newVer)
+
+  new FileOutputStream(vfile).withCloseable { fos ->
+    props.store(fos, null)
+  }
+
   println "🔼 ${key} → ${newVer}"
 }
+
 
 tasks.register("bumpPatchProd") { doLast { bump("VERSION_NAME_BASE_PROD","patch") } }
 tasks.register("bumpMinorProd") { doLast { bump("VERSION_NAME_BASE_PROD","minor") } }

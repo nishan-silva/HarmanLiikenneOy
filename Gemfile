@@ -8,4 +8,4 @@ gem "activesupport", ">= 6.1.7.3", "< 7.1.0"
 
 # --- Added for CI releases ---
 gem "fastlane"                      # CI automation for builds/signing
-gem "firebase_app_distribution"     # Upload Android/iOS builds to Firebase
+gem "fastlane-plugin-firebase_app_distribution"     # Upload Android/iOS builds to Firebase

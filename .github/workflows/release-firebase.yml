@@ -81,7 +81,6 @@ jobs:
 
       - name: Build & upload to Firebase (Fastlane)
         run: |
-          cd ..
           bundle exec fastlane android firebase_release
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

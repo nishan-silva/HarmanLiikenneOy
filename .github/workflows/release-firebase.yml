@@ -44,6 +44,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install JS deps
+        run: |
+          cd ..
+          npm ci
+
       - name: Detect environment from branch
         run: |
           BRANCH="${GITHUB_REF_NAME}"
@@ -92,16 +102,6 @@ jobs:
             git commit -m "chore(version): bump ${FLAVOR} ${{ inputs.bump }}"
             git push
           fi
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ inputs.node_version }}
-
-      - name: Install JS deps
-        run: |
-          cd ..
-          npm ci
 
       - name: Setup JDK
         uses: actions/setup-java@v4

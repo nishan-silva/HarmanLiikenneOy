@@ -5,21 +5,22 @@ platform :android do
     flavor = (ENV["FLAVOR"] || "dev").downcase
     gradle_task = "assemble#{flavor.capitalize}Release"
 
-    # Run Gradle from the android project dir (parent of fastlane/)
+    # We are already running in android/ (workflow working-directory),
+    # so gradlew is at ./gradlew. Use project_dir "." or omit it.
     gradle(
       task: gradle_task,
-      project_dir: "..",       # ← points to android/
+      project_dir: ".",          # <-- key change (was "..")
       print_command: true
     )
 
-    # Find APK (flavor first, then fallback)
+    # Find APK from flavor folder (paths relative to android/)
     apk = Actions.lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH]
     apk ||= ENV["GRADLE_APK_OUTPUT_PATH"]
-    apk ||= Dir["../app/build/outputs/apk/#{flavor}/release/*.apk"].max_by { |f| File.mtime(f) }
-    apk ||= Dir["../app/build/outputs/apk/release/*.apk"].max_by { |f| File.mtime(f) }
+    apk ||= Dir["app/build/outputs/apk/#{flavor}/release/*.apk"].max_by { |f| File.mtime(f) }
+    apk ||= Dir["app/build/outputs/apk/release/*.apk"].max_by { |f| File.mtime(f) }
     UI.user_error!("No APK artifact found") unless apk && File.exist?(apk)
 
-    sh("ls -la ../app/build/outputs/apk/#{flavor}/release || true")
+    sh("ls -la app/build/outputs/apk/#{flavor}/release || true")
     UI.message("Using APK: #{apk}")
 
     app_id =

@@ -28,6 +28,9 @@ on:
         options: [skip, patch, minor, major]
         default: skip
 
+permissions:
+  contents: write
+
 jobs:
   android:
     if: ${{ inputs.platform == 'android' || inputs.platform == 'both' }}

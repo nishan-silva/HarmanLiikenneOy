@@ -109,7 +109,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Make gradlew executable
+      - name: Make gradle executable
         run: chmod +x gradlew
 
       - name: Decrypt keystore (if provided)

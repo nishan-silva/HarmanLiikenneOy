@@ -1,32 +1,23 @@
-require "json"
-
 default_platform(:android)
 
 platform :android do
   lane :firebase_release do
-    # Build APK (Release)
     gradle(
       task: "assemble",
       build_type: "Release",
       print_command: true
     )
 
-    # --- Resolve APK path from output-metadata.json (AGP 7/8 safe) ---
-    meta_path = "app/build/outputs/apk/release/output-metadata.json"
-    UI.user_error!("output-metadata.json not found at #{meta_path}") unless File.exist?(meta_path)
+    # Prefer the path set by the gradle action, then fall back to a glob
+    apk = Actions.lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH]
+    apk ||= ENV["GRADLE_APK_OUTPUT_PATH"]
+    apk ||= Dir["app/build/outputs/apk/release/*.apk"].max_by { |f| File.mtime(f) }
 
-    meta = JSON.parse(File.read(meta_path))
-    elements = meta["elements"] || []
-    apk_file = elements.first && elements.first["outputFile"]
-    UI.user_error!("No APK listed in output-metadata.json") unless apk_file
+    UI.user_error!("No APK artifact found") unless apk && File.exist?(apk)
 
-    apk = File.join("app/build/outputs/apk/release", apk_file)
-    UI.user_error!("APK not found at #{apk}") unless File.exist?(apk)
+    sh("ls -la app/build/outputs/apk/release || true")
+    UI.message("Using APK: #{apk}")
 
-    # Optional: log directory content for debugging
-    sh("ls -la app/build/outputs/apk/release")
-
-    # Upload to Firebase App Distribution
     firebase_app_distribution(
       app: ENV["FIREBASE_ANDROID_APP_ID"],
       testers: ENV["FIREBASE_TESTERS"],
